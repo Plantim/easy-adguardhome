@@ -130,8 +130,9 @@ do {
                 $dllPath = Get-ChildItem -LiteralPath "$bcryptDir\lib\netstandard2.0" -Filter "BCrypt-Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
             }
             if (-not $dllPath) { throw "DLL introuvable" }
-            Add-Type -Path $dllPath
-            Remove-Item $bcryptDir -Recurse -Force -ErrorAction SilentlyContinue
+            $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
+            Remove-Item $bcryptDir -Recurse -Force
+            [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
             $FinalPasswordHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
         } catch {
             Write-Host "    -> Méthode NuGet échouée, fallback via l'API AdGuardHome..." -ForegroundColor Yellow
@@ -229,8 +230,9 @@ users:
             $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net462" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
             if (-not $dllPath) { $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net48" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
             if (-not $dllPath) { throw "DLL introuvable" }
-            Add-Type -Path $dllPath
-            Remove-Item $bcryptTmp -Recurse -Force -ErrorAction SilentlyContinue
+            $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
+            Remove-Item $bcryptTmp -Recurse -Force
+            [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
             $NewHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
         } catch {
             Write-Host "[-] Erreur BCrypt : $_" -ForegroundColor Red
@@ -250,7 +252,7 @@ users:
   - name: $Username
     password: "$NewHash"
 "@
-        $yaml = $yaml -replace "(?m)^users:.*(?:\n\s+.*)*", $userBlock
+        $yaml = $yaml -replace "(?m)^users:.*(?:\r?\n\s+.*)*", $userBlock
         [IO.File]::WriteAllText($yamlPath, $yaml, [System.Text.Encoding]::UTF8)
 
         Write-Host "[*] Redémarrage du service AdGuardHome..." -ForegroundColor Green
