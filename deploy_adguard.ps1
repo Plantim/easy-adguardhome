@@ -5,8 +5,11 @@
 
 # 1. ÉLÉVATION ADMIN IMMÉDIATE
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    $RemoteCmd = "irm https://raw.githubusercontent.com/Plantim/easy-adguardhome/main/deploy_adguard.ps1 | iex"
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$RemoteCmd`"" -Verb RunAs
+    $Command = "irm https://raw.githubusercontent.com/Plantim/easy-adguardhome/main/deploy_adguard.ps1 | iex"
+    $Bytes = [System.Text.Encoding]::Unicode.GetBytes($Command)
+    $EncodedCommand = [Convert]::ToBase64String($Bytes)
+    
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $EncodedCommand" -Verb RunAs
     Exit
 }
 
