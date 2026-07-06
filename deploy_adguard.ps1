@@ -21,6 +21,9 @@ $UrlTemplate = "https://raw.githubusercontent.com/Plantim/easy-adguardhome/refs/
 
 Clear-Host
 
+# Force la console à interpréter les caractères en UTF-8 pour corriger les accents
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 # 2. MENU D'ACCUEIL
 Write-Host "====================================================" -ForegroundColor Cyan
 Write-Host "         Easy Install AdGuardHome (Windows)         " -ForegroundColor Cyan
