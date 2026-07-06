@@ -5,8 +5,8 @@
 
 # 1. ÉLÉVATION ADMIN IMMÉDIATE
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    # On utilise -NoExit pour forcer la fenêtre à rester ouverte si besoin, et on passe par -Command
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `& `"$PSCommandPath`"" -Verb RunAs
+    $RemoteCmd = "irm https://raw.githubusercontent.com/Plantim/easy-adguardhome/main/deploy_adguard.ps1 | iex"
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$RemoteCmd`"" -Verb RunAs
     Exit
 }
 
