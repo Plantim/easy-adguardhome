@@ -120,7 +120,7 @@ A modern, ultra-fast automation tool written in **PowerShell** to deploy a local
 Open a **PowerShell** console and execute the following command:
 
 ```powershell
-irm https://raw.githubusercontent.com/Plantim/easy-adguardhome/main/deploy_adguard.ps1 | iex
+irm https://raw.githubusercontent.com/Plantim/easy-adguardhome/main/deploy_adguard_en.ps1 | iex
 ```
 
 ---
