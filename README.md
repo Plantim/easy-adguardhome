@@ -115,24 +115,95 @@ Les listes de blocage de DNS sont triées sur le volet pour garantir un blocage 
 
 A modern, ultra-fast automation tool written in **PowerShell** to deploy a local instance of **AdGuard Home** on Windows in seconds, featuring a pre-optimized configuration template and maximum security.
 
----
-
-## ✨ Features
-
-* ⚡ **One-Line Deployment:** Automated downloader, extractor, configuration injector, and Windows service installer all in one single command.
-* 🔐 **Secure & Dynamic Credentials:** Prompts for your desired admin username and password, then leverages the official AdGuard Home binary to generate a secure `BCrypt` hash locally. **No plain text passwords are ever stored or transmitted over the internet.**
-* 🌐 **Smart Network Automation:** Automatically detects your active network adapter (Wi-Fi or Ethernet) to optionally toggle your primary DNS to `127.0.0.1`.
-* 🧼 **Automatic Cleanup:** Systematically flushes the Windows DNS cache (`Clear-DnsClientCache`) at the end of the process to ensure instant blocklist propagation.
-* 🧯 **Safety Revert Option:** A dedicated built-in recovery menu allows you to instantly restore Windows DNS settings back to Automatic (DHCP via your router/ISP) if needed.
-* 📦 **Pre-baked Config:** Integrates your customized `Template_AdGuardHome.yaml` containing high-performance blocklists out of the box.
-
----
-
 ## 🚀 Quick Start
 
-Open **PowerShell** (no need to run as Administrator beforehand, the script handles it) and run the following command:
+Open a **PowerShell** console and execute the following command:
 
 ```powershell
 irm https://raw.githubusercontent.com/Plantim/easy-adguardhome/main/deploy_adguard.ps1 | iex
 ```
 
+---
+
+### 🖥️ Script Menu (Console Interface)
+
+When you run the script, an interactive text interface will display directly in your PowerShell console:
+
+```text
+==================================================
+        EASY INSTALL ADGUARDHOME (WINDOWS)        
+==================================================
+
+  [1] Install AdGuardHome
+  [2] Restore Default DNS (Auto/DHCP)
+  [3] Exit
+
+==================================================
+ Veuillez choisir une option [1-3] :
+```
+
+---
+
+## ⚙️ How the Script Works
+
+When you launch the script and select option **`[1] Install AdGuardHome`**, here is exactly what it executes step-by-step on your system:
+
+1. **Privilege Check:** The script checks for Administrator privileges. A Windows User Account Control (UAC) prompt will appear to ensure secure execution.
+2. **Initial Setup:** The wizard prompts you to configure your access credentials:
+   * Username input (defaults to `admin` if left blank).
+   * Password input (defaults to `password` if left blank).
+   * Option to automatically assign the local DNS `127.0.0.1` (`Y/N`) to your active network adapter.
+3. **Download & Extraction:** The script creates the destination directory `C:\AdGuardHome`, fetches the official Windows (AMD64) AdGuard Home archive into the system's temporary folder, extracts the `AdGuardHome.exe` binary, and cleanly deletes the temporary files.
+4. **Credential Security (Local BCrypt):** The script silently runs the AdGuard Home binary with the `--hash-password` argument to encrypt your password using `BCrypt`. **The hash is generated locally on your machine: no plaintext password ever leaves your system.**
+5. **Template Injection:** The script downloads the `Template_AdGuardHome.yaml` file, replaces the user block with your credentials and the newly generated hash, and then writes the final UTF-8 encoded configuration file.
+6. **Windows Service Installation:** AdGuard Home is registered and started as a native Windows system service. This ensures it runs automatically in the background every time your PC boots up.
+7. **Network Configuration & FlushDNS:** If you accepted the network configuration step, the script identifies your active network adapter (connected Ethernet or Wi-Fi) and updates its DNS server to the local address `127.0.0.1`. Finally, it instantly flushes the Windows DNS cache (`Clear-DnsClientCache`) to apply the protections immediately.
+
+---
+
+### ⚙️ Applied Optimizations (vs. Stock Configuration)
+
+The `Template_AdGuardHome.yaml` file fully pre-configures AdGuard Home by applying the following optimized settings and filters:
+
+## Filters > DNS Blocklists
+
+#### 1. Filter Configuration (10 Active Lists)
+The DNS blocklists are handpicked to guarantee maximum blocking with zero false positives or broken websites:
+
+* **"General" Section:**
+  * `AdGuard DNS filter`: The core blocking foundation, active by default.
+  * `HaGeZi's Normal Blocklist`: A highly maintained gem designed to block a maximum amount of junk without false positives.
+  * `OISD Blocklist Small`: Legendary for its overall efficiency and near-zero website breakage rate.
+  * `Peter Lowe's Blocklist`: A historic, lightweight, and highly reliable list.
+
+* **"Other" Section:**
+  * `HaGeZi's Windows/Office Tracker Blocklist`: Perfect for blocking intrusive telemetry and tracking embedded within Microsoft Windows and the Office suite, without interfering with critical updates.
+
+* **"Security" Section (The Anti-Scam & Anti-Virus Shield):**
+  * `Phishing URL Blocklist (PhishTank and OpenPhish)`: Protection against fake banking websites or fraudulent delivery services (Phishing).
+  * `NoCoin Filter List`: Blocks hidden scripts on certain websites that stealthily use your PC's resources to mine cryptocurrency.
+  * `Malicious URL Blocklist (URLHaus)`: Blocks domains known for distributing malware.
+  * `uBlock₀ filters – Badware risks`: uBlock's dedicated security filters, a proven standard.
+
+## Settings > DNS Settings
+
+#### 2. DNS Server Configuration (Upstream & Local)
+* **Secure Upstream Servers:** Uses fast, public DNS servers automatically encrypted with DoH (DNS over HTTPS):
+  ```text
+  https://dns.cloudflare.com/dns-query
+  https://dns.quad9.net/dns-query
+  ```
+* **Query Mode:** Set to **"Parallel requests"** to always use the response from the fastest server.
+* **Fallback Servers:**
+  ```text
+  1.1.1.1
+  9.9.9.9
+  ```
+
+#### 3. Speed & DNS Cache Optimization
+* **DNS Server Configuration (Rate Limit):** The limit is changed from `20` to `0` (disabled) to prevent any unexpected local network blocking.
+* **Cache Size:** Increased from 4 MB (`4194304`) to **64 MB** (`67108864`) to cache as many requests as possible.
+* **TTL (Time-To-Live) Adjustment:** 
+  * **Override Minimum TTL:** Set to `3600` (1 hour) to force AdGuard to keep addresses in memory and avoid constantly making identical requests to Cloudflare.
+  * **Maximum TTL:** Set to `86400` (24 hours).
+* **Optimistic Caching:** Box checked and enabled (`cache_optimistic: true`). Combined with the large cache, this allows AdGuard to respond instantly to the PC using the cached value even if the domain validity expired a few minutes ago, while refreshing the information in the background.
