@@ -111,17 +111,40 @@ do {
         Remove-Item -Path $ZipPath -Force
 
         Write-Host "[3/5] Génération du Hash BCrypt..." -ForegroundColor Green
-        $bcryptUrl = "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.1"
-        $bcryptZip = "$env:TEMP\BCrypt.Net-Next.zip"
-        $bcryptDir = "$env:TEMP\BCrypt.Net-Next"
-        Invoke-WebRequest -Uri $bcryptUrl -OutFile $bcryptZip -UseBasicParsing
-        Expand-Archive -Path $bcryptZip -DestinationPath $bcryptDir -Force
-        Remove-Item $bcryptZip -Force
-        $dllPath = Get-ChildItem -Path $bcryptDir\lib -Recurse -Filter "BCrypt.Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
-        $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
-        [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
-        Remove-Item $bcryptDir -Recurse -Force
-        $FinalPasswordHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
+        try {
+            $bcryptUrl = "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.0"
+            $bcryptZip = Join-Path $env:TEMP "BCrypt.Net-Next.zip"
+            $bcryptDir = Join-Path $env:TEMP "BCrypt.Net-Next"
+            Invoke-WebRequest -Uri $bcryptUrl -OutFile $bcryptZip -UseBasicParsing
+            Expand-Archive -Path $bcryptZip -DestinationPath $bcryptDir -Force
+            Remove-Item $bcryptZip -Force
+            $dllPath = Get-ChildItem -LiteralPath $bcryptDir -Recurse -Filter "BCrypt.Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $dllPath) { throw "DLL introuvable" }
+            $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
+            [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
+            Remove-Item $bcryptDir -Recurse -Force
+            $FinalPasswordHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
+        } catch {
+            Write-Host "    -> Méthode NuGet échouée, fallback via l'API AdGuardHome..." -ForegroundColor Yellow
+            Set-Location $TargetDir
+            Remove-Item "AdGuardHome.yaml" -ErrorAction SilentlyContinue
+            $aghProc = Start-Process -FilePath ".\AdGuardHome.exe" -PassThru -WindowStyle Hidden
+            $ready = $false
+            for ($i = 0; $i -lt 15; $i++) {
+                Start-Sleep -Seconds 1
+                try { $s = Invoke-WebRequest -Uri "http://127.0.0.1:3000/control/status" -UseBasicParsing -ErrorAction Stop
+                    if ((ConvertFrom-Json $s.Content).installation_closed -eq $false) { $ready = $true; break } } catch {}
+            }
+            if (-not $ready) { throw "AdGuardHome n'a pas démarré" }
+            $body = @{web = @{bind_host = "127.0.0.1"; bind_port = 3000}; dns = @{bind_hosts = @("127.0.0.1"); port = 15353};
+                users = @(@{name = $Username; password = $PasswordRaw})} | ConvertTo-Json -Compress
+            Invoke-WebRequest -Uri "http://127.0.0.1:3000/control/installation/configure" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing | Out-Null
+            Start-Sleep -Seconds 4
+            Get-Process -Name "AdGuardHome" -ErrorAction SilentlyContinue | Stop-Process -Force
+            if (Test-Path "AdGuardHome.yaml") { $c = Get-Content "AdGuardHome.yaml" -Raw; $m = [regex]::Match($c, 'password:\s*"(.+)"'); if ($m.Success) { $FinalPasswordHash = $m.Groups[1].Value } else { throw "Hash introuvable" } }
+            else { throw "Fichier de config non créé" }
+            Remove-Item "AdGuardHome.yaml" -Force -ErrorAction SilentlyContinue
+        }
 
         Write-Host "[4/5] Injection de la configuration personnalisée..." -ForegroundColor Green
         $YamlContent = Invoke-WebRequest -Uri $UrlTemplate -UseBasicParsing | Select-Object -ExpandProperty Content
