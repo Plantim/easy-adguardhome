@@ -31,17 +31,20 @@ do {
     Clear-Host
 
     # 2. MENU D'ACCUEIL
+    $yamlExists = Test-Path "$TargetDir\AdGuardHome.yaml"
     Write-Host "====================================================" -ForegroundColor Cyan
     Write-Host "         Easy Install AdGuardHome (Windows)         " -ForegroundColor Cyan
     Write-Host "====================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  [1] Install AdGuardHome" -ForegroundColor Green
     Write-Host "  [2] Restore Default DNS (Auto/DHCP)" -ForegroundColor Yellow
+    if ($yamlExists) { Write-Host "  [4] Change Username/Password" -ForegroundColor Magenta }
     Write-Host "  [3] Exit" -ForegroundColor Red
     Write-Host ""
     Write-Host "====================================================" -ForegroundColor Cyan
 
-    $Choice = Read-Host "Sélectionnez une option (1-3)"
+    $maxOpt = if ($yamlExists) { "4" } else { "3" }
+    $Choice = Read-Host "Sélectionnez une option (1-$maxOpt)"
 
     if ($Choice -eq "3" -or [string]::IsNullOrWhiteSpace($Choice)) {
         Write-Host "[-] Quitter..." -ForegroundColor Yellow
@@ -118,11 +121,17 @@ do {
             Invoke-WebRequest -Uri $bcryptUrl -OutFile $bcryptZip -UseBasicParsing
             Expand-Archive -Path $bcryptZip -DestinationPath $bcryptDir -Force
             Remove-Item $bcryptZip -Force
-            $dllPath = Get-ChildItem -LiteralPath $bcryptDir -Recurse -Filter "BCrypt.Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
+            # net462 = pas de dépendance System.Memory (seulement mscorlib)
+            $dllPath = Get-ChildItem -LiteralPath "$bcryptDir\lib\net462" -Filter "BCrypt-Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $dllPath) {
+                $dllPath = Get-ChildItem -LiteralPath "$bcryptDir\lib\net48" -Filter "BCrypt-Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
+            }
+            if (-not $dllPath) {
+                $dllPath = Get-ChildItem -LiteralPath "$bcryptDir\lib\netstandard2.0" -Filter "BCrypt-Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
+            }
             if (-not $dllPath) { throw "DLL introuvable" }
-            $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
-            [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
-            Remove-Item $bcryptDir -Recurse -Force
+            Add-Type -Path $dllPath
+            Remove-Item $bcryptDir -Recurse -Force -ErrorAction SilentlyContinue
             $FinalPasswordHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
         } catch {
             Write-Host "    -> Méthode NuGet échouée, fallback via l'API AdGuardHome..." -ForegroundColor Yellow
@@ -186,6 +195,70 @@ users:
         Write-Host ""
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host "   INSTALLATION TERMINEE AVEC SUCCES !              " -ForegroundColor Green
+        Write-Host "====================================================" -ForegroundColor Green
+        Write-Host " -> Interface Web  : http://127.0.0.1" -ForegroundColor Green
+        Write-Host " -> Identifiant     : $Username" -ForegroundColor Yellow
+        Write-Host " -> Mot de passe    : $PasswordRaw" -ForegroundColor Yellow
+        Write-Host "====================================================" -ForegroundColor Green
+        Write-Host ""
+        Read-Host "Appuyez sur Entrée pour retourner au menu..."
+    }
+
+    # ------------------------------------------------------------------------------
+    # OPTION 4 : CHANGER IDENTIFIANT / MOT DE PASSE
+    # ------------------------------------------------------------------------------
+    if ($Choice -eq "4") {
+        Clear-Host
+        Write-Host "=== Modification Identifiant / Mot de passe ===" -ForegroundColor Magenta
+        Write-Host ""
+
+        $Username = Read-Host "-> Nouvel identifiant (par défaut: admin) "
+        if ([string]::IsNullOrWhiteSpace($Username)) { $Username = "admin" }
+
+        $PasswordRaw = Read-Host "-> Nouveau mot de passe (par défaut: password) "
+        if ([string]::IsNullOrWhiteSpace($PasswordRaw)) { $PasswordRaw = "password" }
+
+        Write-Host ""
+        Write-Host "[*] Génération du hash BCrypt..." -ForegroundColor Green
+        try {
+            $bcryptTmp = Join-Path $env:TEMP "BCrypt.Net-Next"
+            $bcryptZip = "$bcryptTmp.zip"
+            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.0" -OutFile $bcryptZip -UseBasicParsing
+            Expand-Archive -Path $bcryptZip -DestinationPath $bcryptTmp -Force
+            Remove-Item $bcryptZip -Force
+            $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net462" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $dllPath) { $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net48" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+            if (-not $dllPath) { throw "DLL introuvable" }
+            Add-Type -Path $dllPath
+            Remove-Item $bcryptTmp -Recurse -Force -ErrorAction SilentlyContinue
+            $NewHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
+        } catch {
+            Write-Host "[-] Erreur BCrypt : $_" -ForegroundColor Red
+            Read-Host "Appuyez sur Entrée pour retourner au menu..."
+            continue
+        }
+
+        Write-Host "[*] Arrêt du service AdGuardHome..." -ForegroundColor Green
+        & "$TargetDir\AdGuardHome.exe" -s stop | Out-Null
+        Start-Sleep -Seconds 2
+
+        Write-Host "[*] Mise à jour du fichier YAML..." -ForegroundColor Green
+        $yamlPath = "$TargetDir\AdGuardHome.yaml"
+        $yaml = Get-Content $yamlPath -Raw
+        $userBlock = @"
+users:
+  - name: $Username
+    password: "$NewHash"
+"@
+        $yaml = $yaml -replace "(?m)^users:.*(?:\n\s+.*)*", $userBlock
+        [IO.File]::WriteAllText($yamlPath, $yaml, [System.Text.Encoding]::UTF8)
+
+        Write-Host "[*] Redémarrage du service AdGuardHome..." -ForegroundColor Green
+        & "$TargetDir\AdGuardHome.exe" -s start | Out-Null
+
+        Write-Host ""
+        Write-Host "====================================================" -ForegroundColor Green
+        Write-Host "   IDENTIFIANTS MIS A JOUR AVEC SUCCES !           " -ForegroundColor Green
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host " -> Interface Web  : http://127.0.0.1" -ForegroundColor Green
         Write-Host " -> Identifiant     : $Username" -ForegroundColor Yellow
