@@ -5,7 +5,8 @@
 
 # 1. ÉLÉVATION ADMIN IMMÉDIATE
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    # On utilise -NoExit pour forcer la fenêtre à rester ouverte si besoin, et on passe par -Command
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `& `"$PSCommandPath`"" -Verb RunAs
     Exit
 }
 
