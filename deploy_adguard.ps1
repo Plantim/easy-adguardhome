@@ -19,8 +19,10 @@ $ZipPath = "$env:TEMP\AdGuardHome.zip"
 $UrlRegistry = "https://static.adguard.com/adguardhome/release/AdGuardHome_windows_amd64.zip"
 $UrlTemplate = "https://raw.githubusercontent.com/Plantim/easy-adguardhome/refs/heads/main/Template_AdGuardHome.yaml"
 
-# Force la console à interpréter les caractères en UTF-8 pour corriger les accents
+# Force la console et la police à interpréter les caractères en UTF-8 pour corriger les accents
+$OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
 
 # BOUCLE PRINCIPALE DU MENU
 do {
@@ -108,12 +110,18 @@ do {
         Remove-Item -Path "$env:TEMP\AGH_Extract" -Recurse -Force
         Remove-Item -Path $ZipPath -Force
 
-        Write-Host "[3/5] Génération du Hash BCrypt via AdGuard Home..." -ForegroundColor Green
-        Set-Location $TargetDir
-        $HashFile = "$env:TEMP\agh_hash.txt"
-        Start-Process -FilePath ".\AdGuardHome.exe" -ArgumentList "--hash-password `"$PasswordRaw`"" -NoNewWindow -RedirectStandardOutput $HashFile -Wait
-        $FinalPasswordHash = (Get-Content $HashFile -Raw).Trim()
-        Remove-Item $HashFile -Force
+        Write-Host "[3/5] Génération du Hash BCrypt..." -ForegroundColor Green
+        $bcryptUrl = "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.1"
+        $bcryptZip = "$env:TEMP\BCrypt.Net-Next.zip"
+        $bcryptDir = "$env:TEMP\BCrypt.Net-Next"
+        Invoke-WebRequest -Uri $bcryptUrl -OutFile $bcryptZip -UseBasicParsing
+        Expand-Archive -Path $bcryptZip -DestinationPath $bcryptDir -Force
+        Remove-Item $bcryptZip -Force
+        $dllPath = Get-ChildItem -Path $bcryptDir\lib -Recurse -Filter "BCrypt.Net-Next.dll" | Select-Object -First 1 -ExpandProperty FullName
+        $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
+        [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
+        Remove-Item $bcryptDir -Recurse -Force
+        $FinalPasswordHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
 
         Write-Host "[4/5] Injection de la configuration personnalisée..." -ForegroundColor Green
         $YamlContent = Invoke-WebRequest -Uri $UrlTemplate -UseBasicParsing | Select-Object -ExpandProperty Content
@@ -128,6 +136,7 @@ users:
         [IO.File]::WriteAllText("$TargetDir\AdGuardHome.yaml", $NewYamlContent, [System.Text.Encoding]::UTF8)
 
         Write-Host "[5/5] Enregistrement et démarrage du service Windows..." -ForegroundColor Green
+        Set-Location $TargetDir
         & .\AdGuardHome.exe -s install | Out-Null
         & .\AdGuardHome.exe -s start | Out-Null
 
