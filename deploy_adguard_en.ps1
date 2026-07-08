@@ -133,7 +133,7 @@ do {
             Write-Host "    -> NuGet method failed, falling back to AdGuardHome API..." -ForegroundColor Yellow
             Set-Location $TargetDir
             Remove-Item "AdGuardHome.yaml" -ErrorAction SilentlyContinue
-            $aghProc = Start-Process -FilePath ".\AdGuardHome.exe" -PassThru -WindowStyle Hidden
+            Start-Process -FilePath ".\AdGuardHome.exe" -WindowStyle Hidden
             $ready = $false
             for ($i = 0; $i -lt 15; $i++) {
                 Start-Sleep -Seconds 1
