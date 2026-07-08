@@ -114,8 +114,8 @@ do {
             Expand-Archive -Path $ZipPath -DestinationPath "$env:TEMP\AGH_Extract" -Force -ErrorAction Stop
             if (-not (Test-Path "$env:TEMP\AGH_Extract\AdGuardHome\AdGuardHome.exe")) { throw "Executable not found after extraction" }
             Copy-Item -Path "$env:TEMP\AGH_Extract\AdGuardHome\*" -Destination $TargetDir -Recurse -Force
-            Remove-Item "$env:TEMP\AGH_Extract" -Recurse -Force
-            Remove-Item $ZipPath -Force
+            Remove-Item "$env:TEMP\AGH_Extract" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
         } catch {
             Write-Host "[-] Extraction failed : $_" -ForegroundColor Red
             Read-Host "Press Enter to return to menu..."
