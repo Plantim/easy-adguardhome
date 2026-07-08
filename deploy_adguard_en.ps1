@@ -30,22 +30,21 @@ do {
     Clear-Host
 
     # 2. MENU
-    $yamlExists = Test-Path "$TargetDir\AdGuardHome.yaml"
     Write-Host "====================================================" -ForegroundColor Cyan
     Write-Host "          Easy Install AdGuardHome (Windows)         " -ForegroundColor Cyan
     Write-Host "====================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  [1] Install AdGuardHome" -ForegroundColor Green
     Write-Host "  [2] Restore Default DNS (Auto/DHCP)" -ForegroundColor Yellow
-    if ($yamlExists) { Write-Host "  [4] Change Username/Password" -ForegroundColor Magenta }
-    Write-Host "  [3] Exit" -ForegroundColor Red
+    Write-Host "  [3] Set DNS (custom)" -ForegroundColor Yellow
+    Write-Host "  [4] Change Username/Password" -ForegroundColor Magenta
+    Write-Host "  [5] Exit" -ForegroundColor Red
     Write-Host ""
     Write-Host "====================================================" -ForegroundColor Cyan
 
-    $maxOpt = if ($yamlExists) { "4" } else { "3" }
-    $Choice = Read-Host "Select an option (1-$maxOpt)"
+    $Choice = Read-Host "Select an option (1-5)"
 
-    if ($Choice -eq "3" -or [string]::IsNullOrWhiteSpace($Choice)) {
+    if ($Choice -eq "5" -or [string]::IsNullOrWhiteSpace($Choice)) {
         Write-Host "[-] Exiting..." -ForegroundColor Yellow
         break
     }
@@ -201,11 +200,56 @@ users:
     }
 
     # ------------------------------------------------------------------------------
+    # OPTION 3 : SET CUSTOM DNS
+    # ------------------------------------------------------------------------------
+    if ($Choice -eq "3") {
+        Clear-Host
+        Write-Host "=== Custom DNS Configuration ===" -ForegroundColor Yellow
+        Write-Host ""
+
+        $dnsAddress = Read-Host "-> Enter DNS address (default: 127.0.0.1) "
+        if ([string]::IsNullOrWhiteSpace($dnsAddress)) { $dnsAddress = "127.0.0.1" }
+
+        $ActiveAdapter = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 1
+        if ($ActiveAdapter) {
+            try {
+                Set-DnsClientServerAddress -InterfaceAlias $ActiveAdapter.Name -ServerAddresses ($dnsAddress) -ErrorAction Stop
+                Write-Host "[+] DNS $dnsAddress applied on adapter : $($ActiveAdapter.Name)" -ForegroundColor Green
+            } catch {
+                Write-Host "[-] Error : unable to apply DNS on adapter $($ActiveAdapter.Name)." -ForegroundColor Red
+            }
+        } else {
+            Write-Host "[-] Error : no active network adapter found." -ForegroundColor Red
+        }
+
+        Clear-DnsClientCache
+        Write-Host "[+] Windows DNS cache cleared (FlushDNS)." -ForegroundColor Cyan
+        Write-Host ""
+        Read-Host "Press Enter to return to menu..."
+    }
+
+    # ------------------------------------------------------------------------------
     # OPTION 4 : CHANGE USERNAME / PASSWORD
     # ------------------------------------------------------------------------------
     if ($Choice -eq "4") {
         Clear-Host
         Write-Host "=== Change Username / Password ===" -ForegroundColor Magenta
+        Write-Host ""
+
+        # Auto-detect YAML path
+        $defaultYaml = "$TargetDir\AdGuardHome.yaml"
+        if (Test-Path $defaultYaml) {
+            $yamlPath = $defaultYaml
+            Write-Host "[*] File detected : $yamlPath" -ForegroundColor Cyan
+        } else {
+            $yamlPath = Read-Host "-> Path to AdGuardHome.yaml"
+            if ($yamlPath) { $yamlPath = $yamlPath.Trim('"', "'") }
+            if ([string]::IsNullOrWhiteSpace($yamlPath) -or -not (Test-Path $yamlPath)) {
+                Write-Host "[-] File not found or invalid." -ForegroundColor Red
+                Read-Host "Press Enter to return to menu..."
+                continue
+            }
+        }
         Write-Host ""
 
         $Username = Read-Host "-> New username (default: admin) "
@@ -236,11 +280,12 @@ users:
         }
 
         Write-Host "[*] Stopping AdGuardHome service..." -ForegroundColor Green
-        & "$TargetDir\AdGuardHome.exe" -s stop | Out-Null
+        $aghDir = Split-Path $yamlPath -Parent
+        $aghExe = Join-Path $aghDir "AdGuardHome.exe"
+        & $aghExe -s stop | Out-Null
         Start-Sleep -Seconds 2
 
         Write-Host "[*] Updating YAML file..." -ForegroundColor Green
-        $yamlPath = "$TargetDir\AdGuardHome.yaml"
         $yaml = Get-Content $yamlPath -Raw
         $userBlock = @"
 users:
@@ -251,7 +296,7 @@ users:
         [IO.File]::WriteAllText($yamlPath, $yaml, [System.Text.Encoding]::UTF8)
 
         Write-Host "[*] Restarting AdGuardHome service..." -ForegroundColor Green
-        & "$TargetDir\AdGuardHome.exe" -s start | Out-Null
+        & $aghExe -s start | Out-Null
 
         Write-Host ""
         Write-Host "====================================================" -ForegroundColor Green

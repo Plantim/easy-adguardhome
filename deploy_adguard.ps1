@@ -31,22 +31,21 @@ do {
     Clear-Host
 
     # 2. MENU D'ACCUEIL
-    $yamlExists = Test-Path "$TargetDir\AdGuardHome.yaml"
     Write-Host "====================================================" -ForegroundColor Cyan
     Write-Host "         Easy Install AdGuardHome (Windows)         " -ForegroundColor Cyan
     Write-Host "====================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  [1] Install AdGuardHome" -ForegroundColor Green
-    Write-Host "  [2] Restore Default DNS (Auto/DHCP)" -ForegroundColor Yellow
-    if ($yamlExists) { Write-Host "  [4] Change Username/Password" -ForegroundColor Magenta }
-    Write-Host "  [3] Exit" -ForegroundColor Red
+    Write-Host "  [1] Installer AdGuardHome" -ForegroundColor Green
+    Write-Host "  [2] Restaurer DNS (Auto/DHCP)" -ForegroundColor Yellow
+    Write-Host "  [3] Configurer DNS" -ForegroundColor Yellow
+    Write-Host "  [4] Modifier Identifiant/Mot de passe" -ForegroundColor Magenta
+    Write-Host "  [5] Quitter" -ForegroundColor Red
     Write-Host ""
     Write-Host "====================================================" -ForegroundColor Cyan
 
-    $maxOpt = if ($yamlExists) { "4" } else { "3" }
-    $Choice = Read-Host "Sélectionnez une option (1-$maxOpt)"
+    $Choice = Read-Host "Sélectionnez une option (1-5)"
 
-    if ($Choice -eq "3" -or [string]::IsNullOrWhiteSpace($Choice)) {
+    if ($Choice -eq "5" -or [string]::IsNullOrWhiteSpace($Choice)) {
         Write-Host "[-] Quitter..." -ForegroundColor Yellow
         break # Casse la boucle et ferme le script
     }
@@ -58,7 +57,7 @@ do {
         Clear-Host
         Write-Host "=== Restauration du DNS Windows (Mode Auto/DHCP) ===" -ForegroundColor Yellow
         Write-Host ""
-        
+
         $ActiveAdapter = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 1
         if ($ActiveAdapter) {
             try {
@@ -70,7 +69,7 @@ do {
         } else {
             Write-Host "[-] Erreur : Aucune carte réseau active détectée pour réinitialiser le DNS." -ForegroundColor Red
         }
-        
+
         Clear-DnsClientCache
         Write-Host "[+] Cache DNS Windows vidé (FlushDNS)." -ForegroundColor Cyan
         Write-Host ""
@@ -206,11 +205,56 @@ users:
     }
 
     # ------------------------------------------------------------------------------
+    # OPTION 3 : CONFIGURER UN DNS PERSONNALISÉ
+    # ------------------------------------------------------------------------------
+    if ($Choice -eq "3") {
+        Clear-Host
+        Write-Host "=== Configuration DNS personnalisée ===" -ForegroundColor Yellow
+        Write-Host ""
+
+        $dnsAddress = Read-Host "-> Entrez l'adresse DNS (par défaut: 127.0.0.1) "
+        if ([string]::IsNullOrWhiteSpace($dnsAddress)) { $dnsAddress = "127.0.0.1" }
+
+        $ActiveAdapter = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 1
+        if ($ActiveAdapter) {
+            try {
+                Set-DnsClientServerAddress -InterfaceAlias $ActiveAdapter.Name -ServerAddresses ($dnsAddress) -ErrorAction Stop
+                Write-Host "[+] DNS $dnsAddress appliqué sur l'interface : $($ActiveAdapter.Name)" -ForegroundColor Green
+            } catch {
+                Write-Host "[-] Erreur : Impossible d'appliquer le DNS sur l'interface $($ActiveAdapter.Name)." -ForegroundColor Red
+            }
+        } else {
+            Write-Host "[-] Erreur : Aucune carte réseau active détectée." -ForegroundColor Red
+        }
+
+        Clear-DnsClientCache
+        Write-Host "[+] Cache DNS Windows vidé (FlushDNS)." -ForegroundColor Cyan
+        Write-Host ""
+        Read-Host "Appuyez sur Entrée pour retourner au menu..."
+    }
+
+    # ------------------------------------------------------------------------------
     # OPTION 4 : CHANGER IDENTIFIANT / MOT DE PASSE
     # ------------------------------------------------------------------------------
     if ($Choice -eq "4") {
         Clear-Host
         Write-Host "=== Modification Identifiant / Mot de passe ===" -ForegroundColor Magenta
+        Write-Host ""
+
+        # Détection automatique du chemin YAML
+        $defaultYaml = "$TargetDir\AdGuardHome.yaml"
+        if (Test-Path $defaultYaml) {
+            $yamlPath = $defaultYaml
+            Write-Host "[*] Fichier détecté : $yamlPath" -ForegroundColor Cyan
+        } else {
+            $yamlPath = Read-Host "-> Chemin du fichier AdGuardHome.yaml"
+            if ($yamlPath) { $yamlPath = $yamlPath.Trim('"', "'") }
+            if ([string]::IsNullOrWhiteSpace($yamlPath) -or -not (Test-Path $yamlPath)) {
+                Write-Host "[-] Fichier introuvable ou invalide." -ForegroundColor Red
+                Read-Host "Appuyez sur Entrée pour retourner au menu..."
+                continue
+            }
+        }
         Write-Host ""
 
         $Username = Read-Host "-> Nouvel identifiant (par défaut: admin) "
@@ -241,11 +285,12 @@ users:
         }
 
         Write-Host "[*] Arrêt du service AdGuardHome..." -ForegroundColor Green
-        & "$TargetDir\AdGuardHome.exe" -s stop | Out-Null
+        $aghDir = Split-Path $yamlPath -Parent
+        $aghExe = Join-Path $aghDir "AdGuardHome.exe"
+        & $aghExe -s stop | Out-Null
         Start-Sleep -Seconds 2
 
         Write-Host "[*] Mise à jour du fichier YAML..." -ForegroundColor Green
-        $yamlPath = "$TargetDir\AdGuardHome.yaml"
         $yaml = Get-Content $yamlPath -Raw
         $userBlock = @"
 users:
