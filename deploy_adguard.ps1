@@ -124,8 +124,6 @@ do {
             Read-Host "Appuyez sur Entrée pour retourner au menu..."
             continue
         }
-        Remove-Item -Path "$env:TEMP\AGH_Extract" -Recurse -Force
-        Remove-Item -Path $ZipPath -Force
 
         Write-Host "[3/5] Génération du Hash BCrypt..." -ForegroundColor Green
         try {
