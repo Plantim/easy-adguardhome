@@ -268,9 +268,7 @@ users:
         # Extract current username
         $rawYaml = Get-Content $yamlPath -Raw
         $currentName = ""
-        $currentHash = ""
         if ($rawYaml -match '(?m)^\s+- name:\s*(.+)$') { $currentName = $Matches[1] }
-        if ($rawYaml -match '(?m)^\s+password:\s*"(.+)"') { $currentHash = $Matches[1] }
         Write-Host "Current username : $currentName" -ForegroundColor Gray
         Write-Host ""
 
@@ -281,6 +279,7 @@ users:
         $passwordChanged = -not [string]::IsNullOrWhiteSpace($PasswordRaw)
         Write-Host ""
 
+        # Build modified user section
         if ($passwordChanged) {
             Write-Host "[*] Generating BCrypt hash..." -ForegroundColor Green
             try {
@@ -301,8 +300,17 @@ users:
                 Read-Host "Press Enter to return to menu..."
                 continue
             }
+
+            # Replace entire users block (name + new hash)
+            $userBlock = @"
+users:
+  - name: $Username
+    password: "$NewHash"
+"@
+            $yaml = $rawYaml -replace "(?m)^users:.*(?:\r?\n\s+.*)*", $userBlock
         } else {
-            $NewHash = $currentHash
+            # Password unchanged → only touch the - name: line
+            $yaml = $rawYaml -replace "(?m)^(\s+- name:).*$", "`$1 $Username"
         }
 
         Write-Host "[*] Stopping AdGuardHome service..." -ForegroundColor Green
@@ -311,14 +319,6 @@ users:
         & $aghExe -s stop | Out-Null
         Start-Sleep -Seconds 2
 
-        Write-Host "[*] Updating YAML file..." -ForegroundColor Green
-        $yaml = Get-Content $yamlPath -Raw
-        $userBlock = @"
-users:
-  - name: $Username
-    password: "$NewHash"
-"@
-        $yaml = $yaml -replace "(?m)^users:.*(?:\r?\n\s+.*)*", $userBlock
         [IO.File]::WriteAllText($yamlPath, $yaml, [System.Text.Encoding]::UTF8)
 
         Write-Host "[*] Restarting AdGuardHome service..." -ForegroundColor Green
