@@ -85,11 +85,11 @@ do {
         Write-Host ""
         
         # Gestion Identifiant par défaut
-        $Username = Read-Host "-> Entrez l'identifiant souhaité (par défaut: admin) "
+        $Username = Read-Host "-> Identifiant (si vide: admin) "
         if ([string]::IsNullOrWhiteSpace($Username)) { $Username = "admin" }
 
         # MAJ : Gestion Mot de passe par défaut
-        $PasswordRaw = Read-Host "-> Entrez le mot de passe souhaité (par défaut: password) "
+        $PasswordRaw = Read-Host "-> Mot de passe (si vide: password) "
         if ([string]::IsNullOrWhiteSpace($PasswordRaw)) { $PasswordRaw = "password" }
 
         Write-Host ""
@@ -212,7 +212,7 @@ users:
         Write-Host "=== Configuration DNS personnalisée ===" -ForegroundColor Yellow
         Write-Host ""
 
-        $dnsAddress = Read-Host "-> Entrez l'adresse DNS (par défaut: 127.0.0.1) "
+        $dnsAddress = Read-Host "-> Adresse DNS (si vide: 127.0.0.1) "
         if ([string]::IsNullOrWhiteSpace($dnsAddress)) { $dnsAddress = "127.0.0.1" }
 
         $ActiveAdapter = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 1
@@ -257,31 +257,44 @@ users:
         }
         Write-Host ""
 
-        $Username = Read-Host "-> Nouvel identifiant (par défaut: admin) "
-        if ([string]::IsNullOrWhiteSpace($Username)) { $Username = "admin" }
-
-        $PasswordRaw = Read-Host "-> Nouveau mot de passe (par défaut: password) "
-        if ([string]::IsNullOrWhiteSpace($PasswordRaw)) { $PasswordRaw = "password" }
-
+        # Extraction de l'utilisateur actuel
+        $rawYaml = Get-Content $yamlPath -Raw
+        $currentName = ""
+        $currentHash = ""
+        if ($rawYaml -match '(?m)^\s+- name:\s*(.+)$') { $currentName = $Matches[1] }
+        if ($rawYaml -match '(?m)^\s+password:\s*"(.+)"') { $currentHash = $Matches[1] }
+        Write-Host "Utilisateur actuel : $currentName" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "[*] Génération du hash BCrypt..." -ForegroundColor Green
-        try {
-            $bcryptTmp = Join-Path $env:TEMP "BCrypt.Net-Next"
-            $bcryptZip = "$bcryptTmp.zip"
-            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.0" -OutFile $bcryptZip -UseBasicParsing
-            Expand-Archive -Path $bcryptZip -DestinationPath $bcryptTmp -Force
-            Remove-Item $bcryptZip -Force
-            $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net462" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-            if (-not $dllPath) { $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net48" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
-            if (-not $dllPath) { throw "DLL introuvable" }
-            $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
-            Remove-Item $bcryptTmp -Recurse -Force
-            [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
-            $NewHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
-        } catch {
-            Write-Host "[-] Erreur BCrypt : $_" -ForegroundColor Red
-            Read-Host "Appuyez sur Entrée pour retourner au menu..."
-            continue
+
+        $Username = Read-Host "-> Nouvel identifiant (vide = inchangé) "
+        if ([string]::IsNullOrWhiteSpace($Username)) { $Username = $currentName }
+
+        $PasswordRaw = Read-Host "-> Nouveau mot de passe (vide = inchangé) "
+        $passwordChanged = -not [string]::IsNullOrWhiteSpace($PasswordRaw)
+        Write-Host ""
+
+        if ($passwordChanged) {
+            Write-Host "[*] Génération du hash BCrypt..." -ForegroundColor Green
+            try {
+                $bcryptTmp = Join-Path $env:TEMP "BCrypt.Net-Next"
+                $bcryptZip = "$bcryptTmp.zip"
+                Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.0" -OutFile $bcryptZip -UseBasicParsing
+                Expand-Archive -Path $bcryptZip -DestinationPath $bcryptTmp -Force
+                Remove-Item $bcryptZip -Force
+                $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net462" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+                if (-not $dllPath) { $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net48" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+                if (-not $dllPath) { throw "DLL introuvable" }
+                $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
+                Remove-Item $bcryptTmp -Recurse -Force
+                [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
+                $NewHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
+            } catch {
+                Write-Host "[-] Erreur BCrypt : $_" -ForegroundColor Red
+                Read-Host "Appuyez sur Entrée pour retourner au menu..."
+                continue
+            }
+        } else {
+            $NewHash = $currentHash
         }
 
         Write-Host "[*] Arrêt du service AdGuardHome..." -ForegroundColor Green
@@ -301,7 +314,7 @@ users:
         [IO.File]::WriteAllText($yamlPath, $yaml, [System.Text.Encoding]::UTF8)
 
         Write-Host "[*] Redémarrage du service AdGuardHome..." -ForegroundColor Green
-        & "$TargetDir\AdGuardHome.exe" -s start | Out-Null
+        & $aghExe -s start | Out-Null
 
         Write-Host ""
         Write-Host "====================================================" -ForegroundColor Green
@@ -309,7 +322,11 @@ users:
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host " -> Interface Web  : http://127.0.0.1" -ForegroundColor Green
         Write-Host " -> Identifiant     : $Username" -ForegroundColor Yellow
-        Write-Host " -> Mot de passe    : $PasswordRaw" -ForegroundColor Yellow
+        if ($passwordChanged) {
+            Write-Host " -> Mot de passe    : $PasswordRaw" -ForegroundColor Yellow
+        } else {
+            Write-Host " -> Mot de passe    : inchangé" -ForegroundColor Gray
+        }
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host ""
         Read-Host "Appuyez sur Entrée pour retourner au menu..."

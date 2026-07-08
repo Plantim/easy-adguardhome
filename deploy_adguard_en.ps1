@@ -83,10 +83,10 @@ do {
         Write-Host "=== Admin Configuration ===" -ForegroundColor Magenta
         Write-Host ""
 
-        $Username = Read-Host "-> Enter the desired username (default: admin) "
+        $Username = Read-Host "-> Username (if empty: admin) "
         if ([string]::IsNullOrWhiteSpace($Username)) { $Username = "admin" }
 
-        $PasswordRaw = Read-Host "-> Enter the desired password (default: password) "
+        $PasswordRaw = Read-Host "-> Password (if empty: password) "
         if ([string]::IsNullOrWhiteSpace($PasswordRaw)) { $PasswordRaw = "password" }
 
         Write-Host ""
@@ -207,7 +207,7 @@ users:
         Write-Host "=== Custom DNS Configuration ===" -ForegroundColor Yellow
         Write-Host ""
 
-        $dnsAddress = Read-Host "-> Enter DNS address (default: 127.0.0.1) "
+        $dnsAddress = Read-Host "-> DNS address (if empty: 127.0.0.1) "
         if ([string]::IsNullOrWhiteSpace($dnsAddress)) { $dnsAddress = "127.0.0.1" }
 
         $ActiveAdapter = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 1
@@ -252,31 +252,44 @@ users:
         }
         Write-Host ""
 
-        $Username = Read-Host "-> New username (default: admin) "
-        if ([string]::IsNullOrWhiteSpace($Username)) { $Username = "admin" }
-
-        $PasswordRaw = Read-Host "-> New password (default: password) "
-        if ([string]::IsNullOrWhiteSpace($PasswordRaw)) { $PasswordRaw = "password" }
-
+        # Extract current username
+        $rawYaml = Get-Content $yamlPath -Raw
+        $currentName = ""
+        $currentHash = ""
+        if ($rawYaml -match '(?m)^\s+- name:\s*(.+)$') { $currentName = $Matches[1] }
+        if ($rawYaml -match '(?m)^\s+password:\s*"(.+)"') { $currentHash = $Matches[1] }
+        Write-Host "Current username : $currentName" -ForegroundColor Gray
         Write-Host ""
-        Write-Host "[*] Generating BCrypt hash..." -ForegroundColor Green
-        try {
-            $bcryptTmp = Join-Path $env:TEMP "BCrypt.Net-Next"
-            $bcryptZip = "$bcryptTmp.zip"
-            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.0" -OutFile $bcryptZip -UseBasicParsing
-            Expand-Archive -Path $bcryptZip -DestinationPath $bcryptTmp -Force
-            Remove-Item $bcryptZip -Force
-            $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net462" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-            if (-not $dllPath) { $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net48" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
-            if (-not $dllPath) { throw "DLL not found" }
-            $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
-            Remove-Item $bcryptTmp -Recurse -Force
-            [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
-            $NewHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
-        } catch {
-            Write-Host "[-] BCrypt error : $_" -ForegroundColor Red
-            Read-Host "Press Enter to return to menu..."
-            continue
+
+        $Username = Read-Host "-> New username (empty = unchanged) "
+        if ([string]::IsNullOrWhiteSpace($Username)) { $Username = $currentName }
+
+        $PasswordRaw = Read-Host "-> New password (empty = unchanged) "
+        $passwordChanged = -not [string]::IsNullOrWhiteSpace($PasswordRaw)
+        Write-Host ""
+
+        if ($passwordChanged) {
+            Write-Host "[*] Generating BCrypt hash..." -ForegroundColor Green
+            try {
+                $bcryptTmp = Join-Path $env:TEMP "BCrypt.Net-Next"
+                $bcryptZip = "$bcryptTmp.zip"
+                Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/BCrypt.Net-Next/4.2.0" -OutFile $bcryptZip -UseBasicParsing
+                Expand-Archive -Path $bcryptZip -DestinationPath $bcryptTmp -Force
+                Remove-Item $bcryptZip -Force
+                $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net462" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+                if (-not $dllPath) { $dllPath = Get-ChildItem -LiteralPath "$bcryptTmp\lib\net48" -Filter "BCrypt-Net-Next.dll" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }
+                if (-not $dllPath) { throw "DLL not found" }
+                $dllBytes = [System.IO.File]::ReadAllBytes($dllPath)
+                Remove-Item $bcryptTmp -Recurse -Force
+                [System.Reflection.Assembly]::Load($dllBytes) | Out-Null
+                $NewHash = [BCrypt.Net.BCrypt]::HashPassword($PasswordRaw, 10)
+            } catch {
+                Write-Host "[-] BCrypt error : $_" -ForegroundColor Red
+                Read-Host "Press Enter to return to menu..."
+                continue
+            }
+        } else {
+            $NewHash = $currentHash
         }
 
         Write-Host "[*] Stopping AdGuardHome service..." -ForegroundColor Green
@@ -304,7 +317,11 @@ users:
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host " -> Web Interface : http://127.0.0.1" -ForegroundColor Green
         Write-Host " -> Username      : $Username" -ForegroundColor Yellow
-        Write-Host " -> Password      : $PasswordRaw" -ForegroundColor Yellow
+        if ($passwordChanged) {
+            Write-Host " -> Password      : $PasswordRaw" -ForegroundColor Yellow
+        } else {
+            Write-Host " -> Password      : unchanged" -ForegroundColor Gray
+        }
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host ""
         Read-Host "Press Enter to return to menu..."
