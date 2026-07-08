@@ -101,13 +101,26 @@ do {
 
         Write-Host "[1/5] Downloading latest AdGuard Home..." -ForegroundColor Green
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $UrlRegistry -OutFile $ZipPath
+        try {
+            Invoke-WebRequest -Uri $UrlRegistry -OutFile $ZipPath -ErrorAction Stop
+        } catch {
+            Write-Host "[-] Download failed : $_" -ForegroundColor Red
+            Read-Host "Press Enter to return to menu..."
+            continue
+        }
 
         Write-Host "[2/5] Extracting files..." -ForegroundColor Green
-        Expand-Archive -Path $ZipPath -DestinationPath "$env:TEMP\AGH_Extract" -Force
-        Copy-Item -Path "$env:TEMP\AGH_Extract\AdGuardHome\*" -Destination $TargetDir -Recurse -Force
-        Remove-Item -Path "$env:TEMP\AGH_Extract" -Recurse -Force
-        Remove-Item -Path $ZipPath -Force
+        try {
+            Expand-Archive -Path $ZipPath -DestinationPath "$env:TEMP\AGH_Extract" -Force -ErrorAction Stop
+            if (-not (Test-Path "$env:TEMP\AGH_Extract\AdGuardHome\AdGuardHome.exe")) { throw "Executable not found after extraction" }
+            Copy-Item -Path "$env:TEMP\AGH_Extract\AdGuardHome\*" -Destination $TargetDir -Recurse -Force
+            Remove-Item "$env:TEMP\AGH_Extract" -Recurse -Force
+            Remove-Item $ZipPath -Force
+        } catch {
+            Write-Host "[-] Extraction failed : $_" -ForegroundColor Red
+            Read-Host "Press Enter to return to menu..."
+            continue
+        }
 
         Write-Host "[3/5] Generating BCrypt hash..." -ForegroundColor Green
         try {
@@ -164,9 +177,8 @@ users:
         [IO.File]::WriteAllText("$TargetDir\AdGuardHome.yaml", $NewYamlContent, [System.Text.Encoding]::UTF8)
 
         Write-Host "[5/5] Installing and starting Windows service..." -ForegroundColor Green
-        Set-Location $TargetDir
-        & .\AdGuardHome.exe -s install | Out-Null
-        & .\AdGuardHome.exe -s start | Out-Null
+        & "$TargetDir\AdGuardHome.exe" -s install | Out-Null
+        & "$TargetDir\AdGuardHome.exe" -s start | Out-Null
 
         if ($SetDnsChoice -match "^[oO0yY]") {
             $ActiveAdapter = Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -First 1

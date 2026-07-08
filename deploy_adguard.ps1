@@ -104,11 +104,26 @@ do {
 
         Write-Host "[1/5] Téléchargement de la dernière version d'AdGuard Home..." -ForegroundColor Green
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $UrlRegistry -OutFile $ZipPath
+        try {
+            Invoke-WebRequest -Uri $UrlRegistry -OutFile $ZipPath -ErrorAction Stop
+        } catch {
+            Write-Host "[-] Échec du téléchargement : $_" -ForegroundColor Red
+            Read-Host "Appuyez sur Entrée pour retourner au menu..."
+            continue
+        }
 
         Write-Host "[2/5] Extraction des fichiers..." -ForegroundColor Green
-        Expand-Archive -Path $ZipPath -DestinationPath "$env:TEMP\AGH_Extract" -Force
-        Copy-Item -Path "$env:TEMP\AGH_Extract\AdGuardHome\*" -Destination $TargetDir -Recurse -Force
+        try {
+            Expand-Archive -Path $ZipPath -DestinationPath "$env:TEMP\AGH_Extract" -Force -ErrorAction Stop
+            if (-not (Test-Path "$env:TEMP\AGH_Extract\AdGuardHome\AdGuardHome.exe")) { throw "Exécutable introuvable après extraction" }
+            Copy-Item -Path "$env:TEMP\AGH_Extract\AdGuardHome\*" -Destination $TargetDir -Recurse -Force
+            Remove-Item "$env:TEMP\AGH_Extract" -Recurse -Force
+            Remove-Item $ZipPath -Force
+        } catch {
+            Write-Host "[-] Échec de l'extraction : $_" -ForegroundColor Red
+            Read-Host "Appuyez sur Entrée pour retourner au menu..."
+            continue
+        }
         Remove-Item -Path "$env:TEMP\AGH_Extract" -Recurse -Force
         Remove-Item -Path $ZipPath -Force
 
@@ -168,9 +183,8 @@ users:
         [IO.File]::WriteAllText("$TargetDir\AdGuardHome.yaml", $NewYamlContent, [System.Text.Encoding]::UTF8)
 
         Write-Host "[5/5] Enregistrement et démarrage du service Windows..." -ForegroundColor Green
-        Set-Location $TargetDir
-        & .\AdGuardHome.exe -s install | Out-Null
-        & .\AdGuardHome.exe -s start | Out-Null
+        & "$TargetDir\AdGuardHome.exe" -s install | Out-Null
+        & "$TargetDir\AdGuardHome.exe" -s start | Out-Null
 
         # Application du DNS avec gestion d'erreur poussée
         if ($SetDnsChoice -match "^[oO0yY]") {
