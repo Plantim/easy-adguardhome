@@ -30,12 +30,14 @@ Lorsque vous exécutez le script, une interface textuelle interactive s'affiche 
         EASY INSTALL ADGUARDHOME (WINDOWS)        
 ==================================================
 
-  [1] Install AdGuardHome
-  [2] Restore Default DNS (Auto/DHCP)
-  [3] Exit
+  [1] Installer AdGuardHome
+  [2] Restaurer DNS (Auto/DHCP)
+  [3] Configurer DNS
+  [4] Modifier Identifiant/Mot de passe
+  [5] Quitter
 
 ==================================================
- Veuillez choisir une option [1-3] :
+ Veuillez choisir une option [1-5] :
 ```
 
 ---
@@ -136,10 +138,12 @@ When you run the script, an interactive text interface will display directly in 
 
   [1] Install AdGuardHome
   [2] Restore Default DNS (Auto/DHCP)
-  [3] Exit
+  [3] Set DNS (custom)
+  [4] Change Username/Password
+  [5] Exit
 
 ==================================================
- Veuillez choisir une option [1-3] :
+ Select an option [1-5] :
 ```
 
 ---
