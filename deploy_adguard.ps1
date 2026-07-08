@@ -215,6 +215,7 @@ users:
         Write-Host " -> Mot de passe    : $PasswordRaw" -ForegroundColor Yellow
         Write-Host "====================================================" -ForegroundColor Green
         Write-Host ""
+        Start-Process "http://127.0.0.1"
         Read-Host "Appuyez sur Entrée pour retourner au menu..."
     }
 
